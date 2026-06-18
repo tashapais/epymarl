@@ -94,6 +94,8 @@ def main():
     ap.add_argument("--fps", type=int, default=12)
     ap.add_argument("--seed", type=int, default=12345)
     ap.add_argument("--only-wins", action="store_true", help="only keep frames from episodes the agents won")
+    ap.add_argument("--replay-dir", default="", help="if set, save a .SC2Replay into this dir")
+    ap.add_argument("--stop-on-win", action="store_true", help="save replay right after the first win and stop")
     args_cli = ap.parse_args()
 
     cfg = load_config()
@@ -105,6 +107,10 @@ def main():
     cfg["common_reward"] = True
     cfg["reward_scalarisation"] = "sum"
     cfg["use_cuda"] = th.cuda.is_available()
+    if args_cli.replay_dir:
+        os.makedirs(os.path.abspath(args_cli.replay_dir), exist_ok=True)
+        cfg["env_args"]["replay_dir"] = os.path.abspath(args_cli.replay_dir)
+        cfg["env_args"]["replay_prefix"] = "mappo_protoss5v5"
 
     args = SN(**cfg)
     args.device = "cuda" if args.use_cuda else "cpu"
@@ -179,6 +185,14 @@ def main():
         logger.console_logger.info(f"Episode {ep+1}/{args_cli.episodes}: len={t} won={won}")
         if (not args_cli.only_wins) or won:
             all_frames.extend(ep_frames)
+        if args_cli.replay_dir and won and args_cli.stop_on_win:
+            logger.console_logger.info("Won -> saving replay of this game and stopping early")
+            env.save_replay()
+            break
+    else:
+        if args_cli.replay_dir:
+            logger.console_logger.info("Saving replay of final game session")
+            env.save_replay()
 
     env.close()
     logger.console_logger.info(f"Won {n_wins}/{args_cli.episodes} episodes; {len(all_frames)} frames captured")
