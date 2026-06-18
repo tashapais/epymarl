@@ -246,3 +246,9 @@ $RECYCLE.BIN/
 *.lnk
 
 # End of https://www.gitignore.io/api/linux,python,windows,pycharm+all,visualstudiocode
+# epymarl run artifacts (large / regenerable)
+_run_logs/
+wandb/
+results/models/
+results/sacred/
+results/tb_logs/

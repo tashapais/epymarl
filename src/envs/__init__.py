@@ -1,9 +1,18 @@
 import os
 import sys
 
+import warnings
+
 from .multiagentenv import MultiAgentEnv
 from .gymma import GymmaWrapper
-from .smaclite_wrapper import SMACliteWrapper
+
+try:
+    from .smaclite_wrapper import SMACliteWrapper
+except (ImportError, OSError) as e:
+    SMACliteWrapper = None
+    warnings.warn(
+        f"SMAClite is not available ({e}), so these environments will not be available!"
+    )
 
 
 if sys.platform == "linux":
@@ -34,7 +43,8 @@ def gymma_fn(**kwargs) -> MultiAgentEnv:
 
 
 REGISTRY = {}
-REGISTRY["smaclite"] = smaclite_fn
+if SMACliteWrapper is not None:
+    REGISTRY["smaclite"] = smaclite_fn
 REGISTRY["gymma"] = gymma_fn
 
 
