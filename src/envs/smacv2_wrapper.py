@@ -1,4 +1,5 @@
 from pathlib import Path
+import numpy as np
 import yaml
 
 from smacv2.env.starcraft2.wrapper import StarCraftCapabilityEnvWrapper
@@ -22,13 +23,68 @@ def load_scenario(map_name, **kwargs):
 
 
 class SMACv2Wrapper(MultiAgentEnv):
-    def __init__(self, map_name, seed, **kwargs):
+    def __init__(self, map_name, seed, common_reward=True, reward_scalarisation="sum", **kwargs):
+        # common_reward=False -> individual rewards: redistribute the SMAC team
+        # reward across agents by per-agent damage share (attribution granularity
+        # is varied while the team-level signal is conserved). The common_reward=True
+        # path is unchanged (returns the original scalar team reward).
+        self.common_reward = common_reward
+        self.reward_scalarisation = reward_scalarisation
         self.env = load_scenario(map_name, seed=seed, **kwargs)
         self.episode_limit = self.env.episode_limit
+        env_info = self.env.get_env_info()
+        self.n_agents = env_info["n_agents"]
+        self.n_actions = env_info["n_actions"]
+        self._sc = self._find_sc_env()
+        n_enemies = getattr(self._sc, "n_enemies", self.n_agents)
+        # action layout: [no-op, stop, move x4, attack-enemy x n_enemies]
+        self.n_no_attack = self.n_actions - n_enemies
+
+    def _find_sc_env(self):
+        """Locate the underlying StarCraft2Env (the object exposing `enemies`)."""
+        o = self.env
+        for _ in range(4):
+            if hasattr(o, "enemies"):
+                return o
+            o = getattr(o, "env", None)
+            if o is None:
+                break
+        return self.env
+
+    def _enemy_hp(self):
+        enemies = getattr(self._sc, "enemies", {})
+        return {eid: (u.health + getattr(u, "shield", 0.0)) for eid, u in enemies.items()}
+
+    def _distribute_reward(self, team_reward, actions, pre_hp, post_hp):
+        """Split team_reward across agents by per-agent damage share. Conserves the
+        team total: sum(per_agent) == team_reward."""
+        n = self.n_agents
+        acts = [int(a) for a in (actions.tolist() if hasattr(actions, "tolist") else actions)]
+        attackers = {}
+        for a_id, act in enumerate(acts):
+            if act >= self.n_no_attack:
+                attackers.setdefault(act - self.n_no_attack, []).append(a_id)
+        dmg_i = np.zeros(n, dtype=np.float64)
+        for eid, hp0 in pre_hp.items():
+            dmg = max(0.0, hp0 - post_hp.get(eid, 0.0))
+            atk = attackers.get(eid, [])
+            if dmg > 0.0 and atk:
+                for a in atk:
+                    dmg_i[a] += dmg / len(atk)
+        if dmg_i.sum() > 0.0:
+            per = float(team_reward) * dmg_i / dmg_i.sum()
+        else:
+            # no attributable damage (e.g. pure shaping/penalty step) -> equal split
+            per = np.full(n, float(team_reward) / n, dtype=np.float64)
+        return per.astype(np.float32)
 
     def step(self, actions):
         """Returns obss, reward, terminated, truncated, info"""
+        if not self.common_reward:
+            pre_hp = self._enemy_hp()
         rews, terminated, info = self.env.step(actions)
+        if not self.common_reward:
+            rews = self._distribute_reward(rews, actions, pre_hp, self._enemy_hp())
         obss = self.get_obs()
         truncated = False
         return obss, rews, terminated, truncated, info

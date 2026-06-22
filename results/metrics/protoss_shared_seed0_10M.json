@@ -1,0 +1,20 @@
+{
+  "tag": "protoss_shared_seed0_10M",
+  "map": "protoss_5_vs_5",
+  "checkpoint": "results/models/mappo_seed499731049_protoss_5_vs_5_2026-06-18 23:18:07.021350/10051667",
+  "step": 10051667,
+  "wandb_run": "c0tpvzrc",
+  "episodes": 32,
+  "win_rate": 0.59375,
+  "n_agents": 5,
+  "n_actions": 11,
+  "n_unit_types": 3,
+  "n_rows_total": 9485,
+  "n_rows_alive": 6820,
+  "effrank_n_centroid": 0.3333711854618504,
+  "effrank_centroid_raw": 1.666855927309252,
+  "effrank_global_allrows": 33.03476524515302,
+  "d_act_maskaware": 2.265957846941133,
+  "probe_acc": 0.6869022883792374,
+  "probe_chance": 0.3333333333333333
+}

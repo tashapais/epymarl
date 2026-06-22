@@ -64,7 +64,12 @@ def register_smacv2():
     from .smacv2_wrapper import SMACv2Wrapper
 
     def smacv2_fn(**kwargs) -> MultiAgentEnv:
-        kwargs = __check_and_prepare_smac_kwargs(kwargs)
+        # sc2v2 supports general (per-agent) rewards: keep common_reward and
+        # reward_scalarisation and pass them through to the wrapper, which returns
+        # a scalar team reward when common_reward=True and a per-agent vector
+        # (damage-share redistribution of the team reward) when False.
+        assert "common_reward" in kwargs and "reward_scalarisation" in kwargs
+        assert "map_name" in kwargs, "Please specify the map_name in the env_args"
         return SMACv2Wrapper(**kwargs)
 
     REGISTRY["sc2v2"] = smacv2_fn
