@@ -32,16 +32,29 @@ COLORS = ["#2E6FB7", "#E1812C", "#3A923A"]
 
 def panel(ax, npz, title, probe):
     d = np.load(npz)
-    H, UT, ALIVE = d["H"], d["UT"], d["ALIVE"]
+    H, UT, SLOT, ALIVE = d["H"], d["UT"], d["SLOT"], d["ALIVE"]
     m = (ALIVE == 1) & (UT >= 0)
-    H, UT = H[m], UT[m]
+    H, UT, SLOT = H[m], UT[m], SLOT[m]
     uids = sorted(set(UT.tolist()))
     role = np.array([uids.index(u) for u in UT])
-    # role-discriminating projection (the probe's view; role structure is not in the
-    # top PCA directions, so a supervised projection is needed to see it in 2D).
-    Z = LDA(n_components=2).fit(H, role).transform(H)
-    lo, hi = np.percentile(Z, [1, 99], axis=0)
-    pad = 0.15 * (hi - lo)
+    # Leave-agent-slots-out role-discriminating projection (the probe's view; role
+    # structure is not in the top PCA directions, so a supervised projection is needed
+    # to see it in 2D). Fit the discriminant on all-but-two slots and plot only the
+    # held-out slots, so the layout reflects role structure that *generalises* across
+    # agents rather than in-sample overfit (which would separate every condition).
+    held = set(np.argsort(np.bincount(SLOT))[-2:].tolist())
+    te = np.array([s in held for s in SLOT]); tr = ~te
+    Z = LDA(n_components=2).fit(H[tr], role[tr]).transform(H)[te]
+    role = role[te]
+    # balance classes by subsampling to the smallest so all roles are visible (alive
+    # timesteps are unit-type-imbalanced: fragile units contribute fewer points).
+    rng = np.random.default_rng(0)
+    k = min(np.bincount(role))
+    keep = np.concatenate([rng.choice(np.where(role == r)[0], k, replace=False)
+                           for r in range(len(uids))])
+    Z, role = Z[keep], role[keep]
+    lo, hi = np.percentile(Z, [2, 98], axis=0)
+    pad = 0.25 * (hi - lo)
     ax.set_xlim(lo[0] - pad[0], hi[0] + pad[0])
     ax.set_ylim(lo[1] - pad[1], hi[1] + pad[1])
     for r in range(len(uids)):
@@ -49,6 +62,8 @@ def panel(ax, npz, title, probe):
         ax.scatter(Z[sel, 0], Z[sel, 1], s=8, alpha=0.30, color=COLORS[r % 3],
                    edgecolors="none", rasterized=True,
                    label=TYPE_NAMES[r] if r < len(TYPE_NAMES) else f"Type {r}")
+    for r in range(len(uids)):
+        sel = role == r
         if sel.sum():
             ax.scatter(*Z[sel].mean(0), s=240, color=COLORS[r % 3],
                        edgecolors="black", linewidths=2.0, zorder=5)
