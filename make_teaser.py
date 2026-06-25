@@ -12,10 +12,12 @@ Pipeline
      python metrics_repr.py --checkpoint <masked_ckpt>   --load_step 4000000 \
          --map protoss_5_vs_5 --episodes 16 --obs-mask --out mask.json --dump-embeddings mask.npz
    (each .npz holds H=embeddings, UT=unit-type ids, SLOT=agent slot, ALIVE flags)
-2. Render:
-     python make_teaser.py --left obs.npz  --left-title "(a) Unit type observed" --left-probe 0.76 \
-                           --right mask.npz --right-title "(b) Unit type masked"  --right-probe 0.41 \
-                           --out teaser.png
+2. Render one panel per condition (left to right), each "<npz>:<title>:<probe>":
+     python make_teaser.py \
+         --panel "indiv.npz:(a) Individual reward:0.64" \
+         --panel "shared.npz:(b) Shared (team) reward:0.65" \
+         --panel "mask.npz:(c) Individual, type masked:0.41" \
+         --out teaser.png
 
 The probe accuracies are read off the corresponding metrics_repr JSONs (probe_acc).
 """
@@ -76,16 +78,23 @@ def panel(ax, npz, title, probe):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--left", required=True); ap.add_argument("--right", required=True)
-    ap.add_argument("--left-title", default="(a)"); ap.add_argument("--right-title", default="(b)")
-    ap.add_argument("--left-probe", type=float, default=None)
-    ap.add_argument("--right-probe", type=float, default=None)
+    # one or more panels, each "<npz>:<title>:<probe>" (probe optional), left to right
+    ap.add_argument("--panel", action="append", required=True,
+                    help='repeatable "npz:title:probe", e.g. "obs.npz:(a) Individual reward:0.64"')
     ap.add_argument("--out", default="teaser.png")
     a = ap.parse_args()
+    specs = []
+    for p in a.panel:
+        parts = p.split(":")
+        npz, title = parts[0], parts[1] if len(parts) > 1 else "(panel)"
+        probe = float(parts[2]) if len(parts) > 2 and parts[2] else None
+        specs.append((npz, title, probe))
     plt.rcParams.update({"font.size": 11, "axes.titlesize": 12, "figure.dpi": 200})
-    fig, axes = plt.subplots(1, 2, figsize=(9.2, 4.4))
-    panel(axes[0], a.left, a.left_title, a.left_probe)
-    panel(axes[1], a.right, a.right_title, a.right_probe)
+    n = len(specs)
+    fig, axes = plt.subplots(1, n, figsize=(4.4 * n, 4.4), squeeze=False)
+    axes = axes[0]
+    for ax, (npz, title, probe) in zip(axes, specs):
+        panel(ax, npz, title, probe)
     axes[0].legend(loc="upper right", frameon=True, framealpha=0.9, markerscale=2.2,
                    handletextpad=0.2, borderpad=0.3, fontsize=10)
     fig.tight_layout(); fig.savefig(a.out, bbox_inches="tight")
