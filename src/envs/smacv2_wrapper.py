@@ -30,6 +30,14 @@ class SMACv2Wrapper(MultiAgentEnv):
         # path is unchanged (returns the original scalar team reward).
         self.common_reward = common_reward
         self.reward_scalarisation = reward_scalarisation
+        # Ablation: obs_mask_unit_type=True zeros each agent's OWN unit-type one-hot
+        # in the observation, so role identity is not handed to the encoder and must
+        # be inferred from dynamics / the reward signal. SMACv2 draws unit types
+        # i.i.d. per slot, so an agent's own type is independent of its allies' (no
+        # leak by elimination), and ally/enemy features are left intact to preserve
+        # competence. The own-type bits are the final `unit_type_bits` entries of each
+        # agent's obs (validated below; no trailing timestep feature in this config).
+        self.obs_mask_unit_type = bool(kwargs.pop("obs_mask_unit_type", False))
         self.env = load_scenario(map_name, seed=seed, **kwargs)
         self.episode_limit = self.env.episode_limit
         env_info = self.env.get_env_info()
@@ -39,6 +47,15 @@ class SMACv2Wrapper(MultiAgentEnv):
         n_enemies = getattr(self._sc, "n_enemies", self.n_agents)
         # action layout: [no-op, stop, move x4, attack-enemy x n_enemies]
         self.n_no_attack = self.n_actions - n_enemies
+        self._unit_type_bits = int(getattr(self._sc, "unit_type_bits", 0))
+        if self.obs_mask_unit_type:
+            assert self._unit_type_bits > 0, "obs_mask_unit_type=True but unit_type_bits==0"
+            assert not getattr(self._sc, "obs_timestep_number", False), \
+                "obs_timestep_number=True: own unit-type is not the final obs feature"
+            self.env.reset()
+            tail = np.asarray(self.env.get_obs())[:, -self._unit_type_bits:]
+            assert np.allclose(tail.sum(axis=1), 1.0), \
+                f"own unit-type tail not one-hot (sums={tail.sum(axis=1)}); obs layout assumption wrong"
 
     def _find_sc_env(self):
         """Locate the underlying StarCraft2Env (the object exposing `enemies`)."""
@@ -89,13 +106,25 @@ class SMACv2Wrapper(MultiAgentEnv):
         truncated = False
         return obss, rews, terminated, truncated, info
 
+    def _mask_obs_row(self, o):
+        o = np.array(o, dtype=np.float32, copy=True)
+        if self.obs_mask_unit_type and self._unit_type_bits > 0:
+            o[-self._unit_type_bits:] = 0.0  # zero own unit-type one-hot (dead agents already 0)
+        return o
+
     def get_obs(self):
         """Returns all agent observations in a list"""
-        return self.env.get_obs()
+        obss = self.env.get_obs()
+        if self.obs_mask_unit_type and self._unit_type_bits > 0:
+            return [self._mask_obs_row(o) for o in obss]
+        return obss
 
     def get_obs_agent(self, agent_id):
         """Returns observation for agent_id"""
-        return self.env.get_obs_agent(agent_id)
+        o = self.env.get_obs_agent(agent_id)
+        if self.obs_mask_unit_type and self._unit_type_bits > 0:
+            return self._mask_obs_row(o)
+        return o
 
     def get_obs_size(self):
         """Returns the shape of the observation"""
@@ -123,8 +152,8 @@ class SMACv2Wrapper(MultiAgentEnv):
         """Returns initial observations and info"""
         if seed is not None:
             self.env.seed(seed)
-        obss, _ = self.env.reset()
-        return obss, {}
+        self.env.reset()
+        return self.get_obs(), {}
 
     def render(self):
         self.env.render()

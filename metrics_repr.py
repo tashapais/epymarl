@@ -137,10 +137,12 @@ def main():
     ap.add_argument("--out", default="results/metrics/metrics.json")
     ap.add_argument("--tag", default="run")
     ap.add_argument("--wandb-run", default="")
+    ap.add_argument("--obs-mask", action="store_true")
     args_cli = ap.parse_args()
 
     cfg = load_config()
     cfg["env_args"]["map_name"] = args_cli.map
+    cfg["env_args"]["obs_mask_unit_type"] = bool(args_cli.obs_mask)
     cfg["batch_size_run"] = 1
     cfg["runner"] = "episode"
     cfg["seed"] = args_cli.seed
