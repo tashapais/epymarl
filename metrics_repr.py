@@ -138,6 +138,7 @@ def main():
     ap.add_argument("--tag", default="run")
     ap.add_argument("--wandb-run", default="")
     ap.add_argument("--obs-mask", action="store_true")
+    ap.add_argument("--dump-embeddings", default="")
     args_cli = ap.parse_args()
 
     cfg = load_config()
@@ -233,6 +234,9 @@ def main():
     H = np.array(H); D = np.array(D); AV = np.array(AV)
     UT = np.array(UT); SLOT = np.array(SLOT); ALIVE = np.array(ALIVE)
     alive_mask = ALIVE == 1
+    if args_cli.dump_embeddings:
+        np.savez(args_cli.dump_embeddings, H=H, UT=UT, SLOT=SLOT, ALIVE=ALIVE)
+        print("DUMPED", args_cli.dump_embeddings, H.shape)
 
     # ---- EffRank/n: per-agent-slot time-averaged centroids over alive rows ----
     centroids = []
