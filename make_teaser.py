@@ -44,7 +44,14 @@ def panel(ax, npz, title, probe):
     # to see it in 2D). Fit the discriminant on all-but-two slots and plot only the
     # held-out slots, so the layout reflects role structure that *generalises* across
     # agents rather than in-sample overfit (which would separate every condition).
-    held = set(np.argsort(np.bincount(SLOT))[-2:].tolist())
+    # pick the 2 held-out slots whose combined points cover all roles most evenly
+    # (alive-step unit-type imbalance can otherwise leave a role absent and crash LDA).
+    import itertools
+    best, held = -1, None
+    for combo in itertools.combinations(sorted(set(SLOT.tolist())), 2):
+        c = np.bincount(role[np.isin(SLOT, combo)], minlength=len(uids))
+        if c.min() > best:
+            best, held = c.min(), set(combo)
     te = np.array([s in held for s in SLOT]); tr = ~te
     Z = LDA(n_components=2).fit(H[tr], role[tr]).transform(H)[te]
     role = role[te]
